@@ -1,0 +1,23 @@
+rich
+tqdm
+ninja
+torch
+numpy 
+scipy
+trimesh
+torch-ema
+matplotlib
+tensorboardX
+opencv-python
+imageio
+imageio-ffmpeg
+scikit-learn
+xatlas
+PyOpenGL 
+glfw
+accelerate
+huggingface_hub
+diffusers >= 0.9.0 # for stable-diffusion 2.0
+transformers
+git+https://github.com/NVlabs/nvdiffrast/ 
+git+https://github.com/ashawkey/cubvh

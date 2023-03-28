@@ -1,0 +1,13 @@
+{
+    "text": "a highly detailed stone bust of Theodoros Kolokotronis",
+    "random_textures": true,
+    "iter": 5000,
+    "save_interval": 10,
+    "texture_res": [ 1024, 1024 ],
+    "train_res": [512, 512],
+    "batch": 8,
+    "learning_rate": 0.001,
+    "ks_min" : [0, 0.25, 0],
+    "out_dir": "head",
+    "base_mesh": "./data/ellipsoid.obj"
+}
