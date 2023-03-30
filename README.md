@@ -5,8 +5,10 @@ This is a quickly produced **unofficial** reproduction of [Fantasia3D](https://f
 Thanks for the author's kind help in elaborating the details! 
 This repo is also heavily based on [Nvdiffrec](https://github.com/NVlabs/nvdiffrec) (with extremely untidy modifications...).
 
-
 **Important Notice: This repo is like a preview of this impressive method, and may not be actively maintained since the authors will release the [official implementation](https://github.com/Gorilla-Lab-SCUT/Fantasia3D). The performance seems not as good as the original paper, and there are still some details may be different, but it's still a start point if you are interested.**
+
+
+https://user-images.githubusercontent.com/25863658/228754226-8f14f1e4-fc46-43ef-b815-497d6d79ca44.mp4
 
 
 ### Install
@@ -55,7 +57,7 @@ The validation/checkpoints/final mesh will be stored to `./out/<out_dir>`
 * It seems important to apply antialiasing on the normal and visibility mask (`render/render.py`) so the gradient can be propagated to DMTet.
 
 ### Acknowledgement
-* The original paper:
+* The awesome original paper:
 ```bibtex
 @misc{chen2023fantasia3d,
       title={Fantasia3D: Disentangling Geometry and Appearance for High-quality Text-to-3D Content Creation}, 
