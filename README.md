@@ -2,9 +2,11 @@
 
 This is a quickly produced **unofficial** reproduction of [Fantasia3D](https://fantasia3d.github.io/) for text-to-3D generation, featuring the ability to generate high-quality meshes with PBR textures directly.
 
-Thanks for the author's kind help in elaborating the details! This repo is also heavily based on [Nvdiffrec](https://github.com/NVlabs/nvdiffrec) (with extremely untidy modifications...).
+Thanks for the author's kind help in elaborating the details! 
+This repo is also heavily based on [Nvdiffrec](https://github.com/NVlabs/nvdiffrec) (with extremely untidy modifications...).
 
-**Important Notice: This repo is like a preview of this impressive method, and may not be actively maintained since the authors will release the [official implementation](https://github.com/Gorilla-Lab-SCUT/Fantasia3D).**
+
+**Important Notice: This repo is like a preview of this impressive method, and may not be actively maintained since the authors will release the [official implementation](https://github.com/Gorilla-Lab-SCUT/Fantasia3D). The performance seems not as good as the original paper, and there are still some details may be different, but it's still a start point if you are interested.**
 
 
 ### Install
@@ -43,13 +45,12 @@ python train.py --config configs/strawberry.json
 torchrun --nproc_per_node 4 train.py --config configs/strawberry.json
 ```
 
-For single GPU (V100), it takes about 5 hours to train a single model (5000 iters at batch size of 8).
+For single GPU (V100), it takes about 4 hours to train a single model (5000 iters at batch size of 8).
 
 The validation/checkpoints/final mesh will be stored to `./out/<out_dir>`
 
 ### Implementation Notes
 
-* Directional text prompt is not implemented yet (i.e., appending front/back view).
 * the major logic of SDS is hard coded in `geometry/dmtet.py`.
 * It seems important to apply antialiasing on the normal and visibility mask (`render/render.py`) so the gradient can be propagated to DMTet.
 

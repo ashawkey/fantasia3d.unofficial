@@ -81,7 +81,7 @@ def prepare_batch(target, bg_type='black'):
 
 @torch.no_grad()
 def xatlas_uvmap(glctx, geometry, mat, FLAGS):
-    eval_mesh = geometry.getMesh(mat)
+    eval_mesh, _ = geometry.getMesh(mat)
     
     # Create uvs with xatlas
     v_pos = eval_mesh.v_pos.detach().cpu().numpy()
@@ -302,7 +302,7 @@ class Trainer(torch.nn.Module):
             candidates = [int(os.path.basename(x).split(".")[0]) for x in glob.glob(os.path.join(self.FLAGS.out_dir, "checkpoints", "*.pth"))]
             if len(candidates) == 0: 
                 print(f'[INFO] cannot find checkpoints to load')
-                return
+                return 0
             it = np.max(candidates)
         print(f'[INFO] loading checkpoints from {it}.pth')
         state = torch.load(os.path.join(self.FLAGS.out_dir, "checkpoints", f"{it}.pth"))
@@ -310,6 +310,8 @@ class Trainer(torch.nn.Module):
         self.geometry.load_state_dict(state['geometry'])
         if state['light'] is not None:
             self.light.load_state_dict(state['light'])
+
+        return it
 
 def optimize_mesh(
     glctx,
@@ -337,8 +339,10 @@ def optimize_mesh(
     learning_rate_mat = learning_rate[1] if isinstance(learning_rate, list) or isinstance(learning_rate, tuple) else learning_rate
 
     def lr_schedule(iter, fraction):
-        if iter < int(FLAGS.iter * 0.6):
-            return 1 # 1e-3 geom
+        if iter < int(FLAGS.iter * 0.2):
+            return 1 # 1e-3 geom init
+        elif iter < int(FLAGS.iter * 0.6):
+            return 0.1 # 1e-4 geom fine
         else:
             return 10  # 1e-2 material
     
@@ -354,7 +358,7 @@ def optimize_mesh(
     trainer_noddp = Trainer(glctx, geometry, lgt, opt_material, optimize_geometry, optimize_light, image_loss_fn, guidance_model, text_z, FLAGS)
 
     # load latest model
-    trainer_noddp.load()
+    load_it = trainer_noddp.load()
 
     if FLAGS.multi_gpu: 
         # Multi GPU training mode
@@ -381,7 +385,6 @@ def optimize_mesh(
     # ==============================================================================================
     #  Training loop
     # ==============================================================================================
-    img_cnt = 0
     img_loss_vec = []
     reg_loss_vec = []
     iter_dur_vec = []
@@ -392,6 +395,11 @@ def optimize_mesh(
     v_it = itertools.cycle(dataloader_validate)
 
     for it, target in enumerate(dataloader_train):
+
+        # load checkpoints
+        it += load_it
+        if it > FLAGS.iter:
+            break
 
         # Mix randomized background into dataset image
         target = prepare_batch(target, 'random')
@@ -410,8 +418,8 @@ def optimize_mesh(
                 if display_image:
                     util.display_image(np_result_image, title='%d / %d' % (it, FLAGS.iter))
                 if save_image:
+                    img_cnt = it // FLAGS.save_interval
                     util.save_image(FLAGS.out_dir + '/' + ('img_%s_%06d.png' % (pass_name, img_cnt)), np_result_image)
-                    img_cnt = img_cnt+1
 
         iter_start_time = time.time()
 
@@ -483,7 +491,7 @@ def optimize_mesh(
             print("iter=%5d, img_loss=%.6f, reg_loss=%.6f, lr=%.5f, time=%.1f ms, rem=%s" % 
                 (it, img_loss_avg, reg_loss_avg, optimizer.param_groups[0]['lr'], iter_dur_avg*1000, util.time_to_text(remaining_time)))
         
-        if it % 500 == 0 and FLAGS.local_rank == 0:
+        if it > 0 and it % 500 == 0 and FLAGS.local_rank == 0:
             # save model
             trainer_noddp.save(it)
     
@@ -510,6 +518,7 @@ if __name__ == "__main__":
     parser.add_argument('-mr', '--min-roughness', type=float, default=0.08)
     parser.add_argument('-mip', '--custom-mip', action='store_true', default=False)
     parser.add_argument('-rt', '--random-textures', action='store_true', default=False)
+    parser.add_argument('-dt', '--directional-text', action='store_true', default=False)
     parser.add_argument('-bg', '--background', default='white', choices=['black', 'white', 'checker', 'reference'])
     parser.add_argument('--loss', default='logl1', choices=['logl1', 'logl2', 'mse', 'smape', 'relmse'])
     parser.add_argument('-o', '--out-dir', type=str, default=None)
@@ -531,6 +540,7 @@ if __name__ == "__main__":
     FLAGS.sdf_regularizer     = 0.2                      # Weight for sdf regularizer (see paper for details)
     FLAGS.laplace             = "absolute"               # Mesh Laplacian ["absolute", "relative", "large_steps"]
     FLAGS.laplace_scale       = 10000                  # Weight for sdf regularizer. Default is relative with large weight
+    # FLAGS.normal_scale        = 0.02                  # Weight for sdf regularizer. Default is relative with large weight
     FLAGS.pre_load            = True                     # Pre-load entire dataset into memory for faster training
     FLAGS.kd_min              = [ 0.0,  0.0,  0.0,  0.0] # Limits for kd
     FLAGS.kd_max              = [ 1.0,  1.0,  1.0,  1.0]
@@ -591,7 +601,14 @@ if __name__ == "__main__":
     for p in guidance_model.parameters():
         p.requires_grad = False
 
-    text_z = guidance_model.get_text_embeds([FLAGS.text], [''], FLAGS.batch)
+    if FLAGS.directional_text:    
+        text_z = []
+        for d in ['front', 'side', 'back', 'side']:
+            # construct dir-encoded text
+            text_z.append(guidance_model.get_text_embeds([f"{FLAGS.text}, {d} view"], [''], 1))
+        text_z = torch.stack(text_z, dim=0)
+    else:
+        text_z = guidance_model.get_text_embeds([f"{FLAGS.text}"], [''], FLAGS.batch)
 
     # ==============================================================================================
     #  Create data pipeline

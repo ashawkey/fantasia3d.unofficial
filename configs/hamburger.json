@@ -1,5 +1,5 @@
 {
-    "text": "a golden goblet",
+    "text": "a delicious hamburger",
     "random_textures": true,
     "iter": 5000,
     "save_interval": 10,
@@ -7,6 +7,6 @@
     "train_res": [512, 512],
     "batch": 8,
     "learning_rate": 0.001,
-    "out_dir": "goblet",
-    "base_mesh": "./data/ellipsoid.obj"
+    "out_dir": "hamburger",
+    "base_mesh": "./data/sphere.obj"
 }

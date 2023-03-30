@@ -8,6 +8,7 @@
 # its affiliates is strictly prohibited.
 
 import torch
+import numpy as np
 
 class Dataset(torch.utils.data.Dataset):
     """Basic dataset interface"""
@@ -26,7 +27,7 @@ class Dataset(torch.utils.data.Dataset):
             'mv' : torch.cat(list([item['mv'] for item in batch]), dim=0),
             'mvp' : torch.cat(list([item['mvp'] for item in batch]), dim=0),
             'campos' : torch.cat(list([item['campos'] for item in batch]), dim=0),
-            'rays_d' : torch.cat(list([item['rays_d'] for item in batch]), dim=0),
+            'direction' : np.array([item['direction'] for item in batch], dtype=np.int32),
             'resolution' : iter_res,
             'spp' : iter_spp,
         }

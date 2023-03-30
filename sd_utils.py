@@ -131,7 +131,7 @@ class StableDiffusion(nn.Module):
         return text_embeddings
 
 
-    def train_step(self, text_embeddings, pred_rgb, guidance_scale=100, as_latent=False):
+    def train_step(self, text_embeddings, pred_rgb, guidance_scale=30, as_latent=False):
         B = pred_rgb.shape[0]
 
         if as_latent:
@@ -168,13 +168,13 @@ class StableDiffusion(nn.Module):
         noise_pred = noise_pred_text + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
         # w(t), sigma_t^2
-        # w = (1 - self.alphas[t])
-        w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
+        w = (1 - self.alphas[t])
+        # w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
         
         grad = w.view(-1, 1, 1, 1) * (noise_pred - noise)
 
         # clip grad for stable training?
-        grad = grad.clamp(-10, 10)
+        # grad = grad.clamp(-10, 10)
         grad = torch.nan_to_num(grad)
 
         # since we omitted an item in grad, we need to use the custom function to specify the gradient
@@ -213,7 +213,7 @@ class StableDiffusion(nn.Module):
 
     def decode_latents(self, latents):
 
-        latents = 1 / 0.18215 * latents
+        latents = 1 / self.vae.config.scaling_factor * latents
 
         with torch.no_grad():
             imgs = self.vae.decode(latents).sample
@@ -228,7 +228,7 @@ class StableDiffusion(nn.Module):
         imgs = 2 * imgs - 1
 
         posterior = self.vae.encode(imgs).latent_dist
-        latents = posterior.sample() * 0.18215
+        latents = posterior.sample() * self.vae.config.scaling_factor
 
         return latents
 

@@ -7,7 +7,6 @@
     "train_res": [512, 512],
     "batch": 8,
     "learning_rate": 0.001,
-    "ks_min" : [0, 0.25, 0],
     "out_dir": "strawberry",
-    "base_mesh": "./data/sphere.obj"
+    "base_mesh": "./data/ellipsoid.obj"
 }

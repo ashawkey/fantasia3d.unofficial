@@ -1,5 +1,5 @@
 {
-    "text": "superman, full body",
+    "text": "a flowering bonsai tree",
     "random_textures": true,
     "iter": 5000,
     "save_interval": 10,
@@ -7,7 +7,6 @@
     "train_res": [512, 512],
     "batch": 8,
     "learning_rate": 0.001,
-    "ks_min" : [0, 0.25, 0],
-    "out_dir": "superman",
+    "out_dir": "flower",
     "base_mesh": "./data/ellipsoid.obj"
 }

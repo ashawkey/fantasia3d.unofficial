@@ -8,6 +8,7 @@
 # its affiliates is strictly prohibited.
 
 import torch
+import numpy as np
 import nvdiffrast.torch as dr
 
 from . import util
@@ -275,5 +276,36 @@ def render_uv(ctx, mesh, resolution, mlp_texture):
     # Sample out textures from MLP
     all_tex = mlp_texture.sample(gb_pos)
     assert all_tex.shape[-1] == 9 or all_tex.shape[-1] == 10, "Combined kd_ks_normal must be 9 or 10 channels"
-    perturbed_nrm = all_tex[..., -3:]
-    return (rast[..., -1:] > 0).float(), all_tex[..., :-6], all_tex[..., -6:-3], util.safe_normalize(perturbed_nrm)
+
+    mask = (rast[..., -1:] > 0).float()
+    kd = all_tex[..., :-6]
+    ks = all_tex[..., -6:-3]    
+    perturbed_nrm = util.safe_normalize(all_tex[..., -3:])
+
+    # antialiasing
+    from sklearn.neighbors import NearestNeighbors
+    from scipy.ndimage import binary_dilation, binary_erosion
+
+    mask_np = mask.cpu().numpy() > 0
+
+    inpaint_region = binary_dilation(mask_np, iterations=3)
+    inpaint_region[mask_np] = 0
+
+    search_region = mask_np.copy()
+    not_search_region = binary_erosion(search_region, iterations=2)
+    search_region[not_search_region] = 0
+
+    search_coords = np.stack(np.nonzero(search_region), axis=-1)
+    inpaint_coords = np.stack(np.nonzero(inpaint_region), axis=-1)
+
+    knn = NearestNeighbors(n_neighbors=1, algorithm='kd_tree').fit(search_coords)
+    _, indices = knn.kneighbors(inpaint_coords)
+
+    inpaint_coords = torch.from_numpy(inpaint_coords).long().to(kd.device)
+    target_coords = torch.from_numpy(search_coords[indices[:, 0]]).long().to(kd.device)
+
+    kd[tuple(inpaint_coords.T)] = kd[tuple(target_coords.T)]
+    ks[tuple(inpaint_coords.T)] = ks[tuple(target_coords.T)]
+    perturbed_nrm[tuple(inpaint_coords.T)] = perturbed_nrm[tuple(target_coords.T)]
+
+    return mask, kd, ks, perturbed_nrm

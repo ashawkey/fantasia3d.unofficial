@@ -230,11 +230,9 @@ class DMTetGeometry(torch.nn.Module):
 
         self.encoder, self.in_dim = get_encoder('hashgrid', input_dim=3)
         self.mlp = MLP(self.in_dim, 4, 32, 3, False)
-        self.bg_mlp = MLP(3, 3, 32, 2, False)
 
         self.encoder.cuda()
         self.mlp.cuda()
-        self.bg_mlp.cuda()
 
         # init sdf from base mesh
         if FLAGS.base_mesh is not None:
@@ -244,7 +242,7 @@ class DMTetGeometry(torch.nn.Module):
             import cubvh, trimesh
             mesh = trimesh.load(FLAGS.base_mesh, force='mesh')
 
-            scale = 1 / np.array(mesh.bounds[1] - mesh.bounds[0]).max()
+            scale = 1.5 / np.array(mesh.bounds[1] - mesh.bounds[0]).max()
             center = np.array(mesh.bounds[1] + mesh.bounds[0]) / 2
             mesh.vertices = (mesh.vertices - center) * scale
             
@@ -326,11 +324,6 @@ class DMTetGeometry(torch.nn.Module):
         buffers['mesh'] = opt_mesh
         buffers['sdf'] = sdf
 
-        # background layer
-        bg_color = torch.sigmoid(self.bg_mlp(target['rays_d']))
-        B, H, W = buffers['shaded'].shape[:3]
-        buffers['bg_color'] = bg_color.view(B, H, W, -1)
-
         return buffers
 
 
@@ -360,41 +353,53 @@ class DMTetGeometry(torch.nn.Module):
             # mode = 'rgb'
             pred_rgb = buffers['shaded'][..., 0:3].permute(0, 3, 1, 2).contiguous()
             pred_ws = buffers['shaded'][..., 3].unsqueeze(1) # [B, 1, H, W]
-            bg_color = buffers['bg_color'].permute(0, 3, 1, 2).contiguous() # [B, 3, H, W]
-            pred_rgb = pred_rgb * pred_ws + (1 - pred_ws) * bg_color
+            pred_rgb = pred_rgb * pred_ws + (1 - pred_ws) * 1 # white bg
             as_latent = False
 
-        # torch_vis_2d(bg_color[0])
         # torch_vis_2d(pred_rgb[0])
         # torch_vis_2d(pred_normal[0])
         # torch_vis_2d(pred_ws[0])
-        
-        img_loss = guidance_model.train_step(text_z, pred_rgb.half(), as_latent=as_latent)
+
+        if self.FLAGS.directional_text:
+            all_pos = []
+            all_neg = []
+            for emb in text_z[target['direction']]: # list of [2, S, -1]
+                pos, neg = emb.chunk(2) # [1, S, -1]
+                all_pos.append(pos)
+                all_neg.append(neg)
+            text_embedding = torch.cat(all_pos + all_neg, dim=0) # [2b, S, -1]
+        else:
+            text_embedding = text_z
+
+        img_loss = guidance_model.train_step(text_embedding, pred_rgb.half(), as_latent=as_latent)
 
         # img_loss = torch.tensor(0.0, device = "cuda")
 
         # below are lots of regularizations...
         reg_loss = torch.tensor(0.0, device = "cuda")
 
-        # SDF regularizer
-        sdf_weight = self.FLAGS.sdf_regularizer - (self.FLAGS.sdf_regularizer - 0.01) * min(1.0, 4.0 * t_iter)
-        sdf_loss = sdf_reg_loss(buffers['sdf'], self.all_edges).mean() * sdf_weight # Dropoff to 0.01
-        reg_loss = reg_loss + sdf_loss
+        if iteration < int(self.FLAGS.iter * 0.6):
+            # SDF regularizer
+            sdf_weight = self.FLAGS.sdf_regularizer - (self.FLAGS.sdf_regularizer - 0.01) * min(1.0, 4.0 * t_iter)
+            sdf_loss = sdf_reg_loss(buffers['sdf'], self.all_edges).mean() * sdf_weight # Dropoff to 0.01
+            reg_loss = reg_loss + sdf_loss
 
-        # directly regularize mesh smoothness
-        lap_loss = regularizer.laplace_regularizer_const(mesh.v_pos, mesh.t_pos_idx) * self.FLAGS.laplace_scale * (1 - t_iter)
-        reg_loss = reg_loss + lap_loss
-
-        # print(lap_loss, sdf_loss)
-        # reg_loss += regularizer.normal_consistency(mesh.v_pos, mesh.t_pos_idx) * self.FLAGS.laplace_scale * (1 - t_iter)
+            # directly regularize mesh smoothness in finetuning...
+            if iteration > int(self.FLAGS.iter * 0.2):
+                lap_loss = regularizer.laplace_regularizer_const(mesh.v_pos, mesh.t_pos_idx) * self.FLAGS.laplace_scale #* min(1.0, iteration / 500)
+                reg_loss = reg_loss + lap_loss
+            
+            # normal_loss = regularizer.normal_consistency(mesh.v_pos, mesh.t_pos_idx) * self.FLAGS.laplace_scale * min(1.0, iteration / 500)
+            # reg_loss = reg_loss + normal_loss
         
-        # # Albedo (k_d) smoothnesss regularizer
-        # reg_loss += torch.mean(buffers['kd_grad'][..., :-1] * buffers['kd_grad'][..., -1:]) * 0.03 * min(1.0, iteration / 500)
+        else:
+            # Albedo (k_d) smoothnesss regularizer
+            # reg_loss += torch.mean(buffers['kd_grad'][..., :-1] * buffers['kd_grad'][..., -1:]) * 0.03 * min(1.0, (iteration - int(self.FLAGS.iter * 0.6)) / 500)
 
-        # # Visibility regularizer
-        # reg_loss += torch.mean(buffers['occlusion'][..., :-1] * buffers['occlusion'][..., -1:]) * 0.001 * min(1.0, iteration / 500)
+            # # Visibility regularizer
+            # reg_loss += torch.mean(buffers['occlusion'][..., :-1] * buffers['occlusion'][..., -1:]) * 0.001 * min(1.0, (iteration - int(self.FLAGS.iter * 0.6)) / 500)
 
-        # # Light white balance regularizer
-        # reg_loss = reg_loss + lgt.regularizer() * 0.005
+            # # Light white balance regularizer
+            reg_loss += lgt.regularizer() * 0.005
 
         return img_loss, reg_loss
